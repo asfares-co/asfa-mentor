@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mentor 未起動チェックツール</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap');
+  :root {
+    --bg: #0a1a1a; --surface: #0f2424; --surface2: #163030; --border: #1e4040;
+    --accent: #4ab8b8; --teal: #2a8888; --ok: #5dd6a8;
+    --warn: #e05c5c; --yellow: #f0c040;
+    --text: #d8f0ee; --text-sub: #5a9090;
+    --mono: 'DM Mono', monospace; --sans: 'Noto Sans JP', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    background-image: radial-gradient(ellipse at 10% 20%, rgba(74,184,184,0.06) 0%, transparent 50%),
+                      radial-gradient(ellipse at 90% 80%, rgba(74,184,184,0.04) 0%, transparent 50%);
+    color: var(--text); font-family: var(--sans);
+    min-height: 100vh; padding: 28px 20px; max-width: 720px; margin: 0 auto;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 28px; padding-bottom: 18px; border-bottom: 1px solid var(--border); position: relative;
+  }
+  header::after { content:''; position:absolute; bottom:-1px; left:0; width:80px; height:2px; background:linear-gradient(90deg,var(--accent),transparent); }
+  .header-text { display:flex; flex-direction:column; gap:3px; }
+  header h1 { font-size:20px; font-weight:700; color:#fff; letter-spacing:0.02em; }
+  header h1 span { color:var(--accent); }
+  header .sub { font-family:var(--mono); font-size:10px; color:var(--text-sub); letter-spacing:0.12em; }
+
+  .steps { display:flex; margin-bottom:24px; gap:3px; }
+  .step { flex:1; padding:9px 12px; background:var(--surface); border:1px solid var(--border); border-radius:6px; font-size:10px; color:var(--text-sub); font-family:var(--mono); letter-spacing:0.05em; transition:all 0.2s; }
+  .step.active { background:linear-gradient(135deg,rgba(74,184,184,0.15),rgba(74,184,184,0.05)); color:var(--accent); border-color:var(--accent); }
+  .step.done { color:var(--ok); border-color:rgba(93,214,168,0.3); }
+  .step-num { display:block; font-size:9px; margin-bottom:2px; opacity:0.6; }
+
+  .upload-zone { margin-bottom:16px; }
+  .upload-box { background:var(--surface); border:1px dashed var(--border); border-radius:10px; padding:18px; cursor:pointer; transition:all 0.25s; position:relative; display:flex; align-items:center; gap:14px; }
+  .upload-box:hover,.upload-box.drag-over { border-color:var(--accent); background:rgba(74,184,184,0.06); box-shadow:0 0 16px rgba(74,184,184,0.12); }
+  .upload-box.loaded { border-style:solid; border-color:var(--accent); background:rgba(74,184,184,0.06); }
+  .upload-box input[type=file] { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+  .upload-icon { font-size:26px; flex-shrink:0; }
+  .upload-info { text-align:left; }
+  .upload-label { font-family:var(--mono); font-size:10px; color:var(--text-sub); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:3px; }
+  .upload-name { font-size:12px; color:var(--text); }
+
+  .block-area { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-bottom:16px; }
+  .block-header { padding:10px 16px; border-bottom:1px solid var(--border); background:linear-gradient(135deg,rgba(74,184,184,0.15),rgba(74,184,184,0.05)); font-size:11px; font-family:var(--mono); color:var(--accent); letter-spacing:0.08em; }
+  .block-area textarea { width:100%; background:transparent; border:none; outline:none; color:var(--text); font-family:var(--sans); font-size:13px; padding:12px 16px; resize:vertical; min-height:160px; line-height:1.9; }
+  .block-area textarea::placeholder { color:var(--text-sub); }
+  .block-hint { font-size:10px; color:var(--text-sub); padding:4px 16px 10px; font-family:var(--mono); }
+
+  .run-btn { display:block; width:100%; padding:14px; background:linear-gradient(135deg,#4ab8b8,#2a9090); color:#0a1a1a; border:none; border-radius:10px; font-family:var(--sans); font-size:14px; font-weight:700; letter-spacing:0.08em; cursor:pointer; transition:all 0.25s; margin-bottom:20px; box-shadow:0 4px 16px rgba(74,184,184,0.25); }
+  .run-btn:disabled { opacity:0.3; cursor:not-allowed; box-shadow:none; }
+  .run-btn:not(:disabled):hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(74,184,184,0.35); }
+
+  .sub-btn { padding:9px 16px; background:var(--surface); border:1px solid var(--teal); border-radius:8px; font-family:var(--sans); font-size:12px; cursor:pointer; transition:all 0.2s; color:var(--accent); }
+  .sub-btn:hover { background:rgba(74,184,184,0.1); border-color:var(--accent); }
+  .sub-btn.green { color:var(--ok); border-color:rgba(93,214,168,0.5); }
+  .sub-btn.green:hover { background:rgba(93,214,168,0.1); }
+
+  #status { font-family:var(--mono); font-size:12px; color:var(--text-sub); margin-bottom:16px; min-height:18px; }
+  #status.error { color:var(--warn); }
+  #status.ok { color:var(--ok); }
+
+  .sec-title { font-size:11px; font-weight:700; font-family:var(--mono); letter-spacing:0.08em; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+  .sec-title.warn { color:var(--warn); }
+  .sec-title.ok { color:var(--ok); }
+  .sec-title.info { color:var(--accent); }
+  .sec-title.lime { color:var(--ok); }
+  .badge { background:var(--surface2); border:1px solid currentColor; border-radius:4px; padding:1px 7px; font-size:12px; }
+
+  .driver-card { background:var(--surface); border:1px solid var(--warn); border-left:3px solid var(--warn); border-radius:8px; padding:12px 16px; margin-bottom:8px; display:flex; align-items:center; gap:12px; }
+  .driver-name { font-size:14px; font-weight:500; color:var(--warn); }
+  .driver-note { font-size:11px; color:var(--text-sub); font-family:var(--mono); margin-left:auto; }
+
+  .score-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .score-table th { background:var(--surface2); padding:8px 12px; text-align:left; font-family:var(--mono); font-size:10px; color:var(--text-sub); border-bottom:1px solid var(--border); letter-spacing:0.06em; }
+  .score-table td { padding:9px 12px; border-bottom:1px solid rgba(30,64,64,0.5); }
+  .score-table tr:last-child td { border-bottom:none; }
+  .score-table tr:hover td { background:rgba(74,184,184,0.04); }
+  .sv { font-family:var(--mono); font-weight:700; font-size:13px; }
+  .sv.high { color:var(--ok); }
+  .sv.mid  { color:var(--yellow); }
+  .sv.low  { color:var(--warn); }
+  .sbar { width:56px; height:5px; background:var(--surface2); border-radius:3px; overflow:hidden; display:inline-block; vertical-align:middle; margin-left:6px; }
+  .sbar-fill { height:100%; border-radius:3px; }
+
+  .line-preview { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-bottom:10px; }
+  .line-preview .block-header { background:linear-gradient(135deg,rgba(93,214,168,0.12),rgba(93,214,168,0.04)); color:var(--ok); }
+  .line-preview textarea { font-size:12px; min-height:200px; line-height:1.85; }
+
+  .ok-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:7px; }
+  .ok-card { background:var(--surface); border:1px solid rgba(93,214,168,0.22); border-radius:8px; padding:7px 12px; display:flex; align-items:center; gap:7px; font-size:12px; color:var(--ok); }
+
+  .result-section { margin-bottom:24px; }
+  .btn-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .date-display { font-family:var(--mono); font-size:11px; color:var(--text-sub); margin-bottom:20px; }
+  .file-info-bar { background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:8px 14px; font-family:var(--mono); font-size:11px; color:var(--text-sub); margin-bottom:16px; display:none; }
+  .file-info-bar.visible { display:block; }
+  .file-info-bar span { color:var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <div style="font-size:36px;flex-shrink:0;">🚗</div>
+  <div class="header-text">
+    <h1>Mentor <span>チェック</span>＆LINE送信ツール</h1>
+    <div class="sub">DRIVER MONITORING — DAILY CHECK & REPORT SYSTEM</div>
+  </div>
+</header>
+
+<div class="date-display" id="date-display"></div>
+
+<div class="steps">
+  <div class="step active" id="step1"><span class="step-num">STEP 1</span>ファイル読込</div>
+  <div class="step" id="step2"><span class="step-num">STEP 2</span>出勤者入力</div>
+  <div class="step" id="step3"><span class="step-num">STEP 3</span>結果確認</div>
+  <div class="step" id="step4"><span class="step-num">STEP 4</span>LINE送信</div>
+</div>
+
+<div class="upload-zone">
+  <div class="upload-box" id="box-xlsx">
+    <input type="file" accept=".xlsx,.csv" id="input-xlsx">
+    <div class="upload-icon">📊</div>
+    <div class="upload-info">
+      <div class="upload-label">① Driver Report（Mentor起動ファイル）</div>
+      <div class="upload-name" id="name-xlsx">Excel / CSV をドロップまたはクリック</div>
+    </div>
+  </div>
+</div>
+
+<div class="file-info-bar" id="file-info-bar">
+  読込完了：<span id="file-driver-count">0</span> 名分のデータ（FICOスコアも取得済み）
+</div>
+
+<div class="block-area">
+  <div class="block-header">📋 前日出勤ドライバー（LINEからそのままペースト可）</div>
+  <textarea id="attendance-input" placeholder="木下さん&#10;田村さん&#10;大隣さん&#10;梶さん&#10;橋口さん&#10;前田（聖）さん&#10;福原さん&#10;..."></textarea>
+  <div class="block-hint">「さん」付き・括弧付き・姓のみ、どれでも対応</div>
+</div>
+
+<button class="run-btn" id="run-btn" disabled>✓ チェック実行 → スコア表＋LINEメッセージを生成</button>
+<div id="status"></div>
+<div id="result-area"></div>
+
+<script>
+// ── 日付 ─────────────────────────────────────────────
+const _d = new Date();
+const _w = ['日','月','火','水','木','金','土'];
+document.getElementById('date-display').textContent =
+  `${_d.getFullYear()}年${_d.getMonth()+1}月${_d.getDate()}日（${_w[_d.getDay()]}）`;
+
+// ── 状態 ──────────────────────────────────────────────
+let driverData  = [];
+let mentorNames = new Set();
+
+// ── ファイル読込 ──────────────────────────────────────
+const inputXlsx = document.getElementById('input-xlsx');
+const boxXlsx   = document.getElementById('box-xlsx');
+
+boxXlsx.addEventListener('dragover', e => { e.preventDefault(); boxXlsx.classList.add('drag-over'); });
+boxXlsx.addEventListener('dragleave', () => boxXlsx.classList.remove('drag-over'));
+boxXlsx.addEventListener('drop', e => {
+  e.preventDefault(); boxXlsx.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) { inputXlsx.files = e.dataTransfer.files; inputXlsx.dispatchEvent(new Event('change')); }
+});
+
+inputXlsx.addEventListener('change', function() {
+  const file = this.files[0];
+  if (!file) return;
+  document.getElementById('name-xlsx').textContent = file.name;
+  boxXlsx.classList.add('loaded');
+  setStatus('読込中...','');
+
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const wb   = XLSX.read(new Uint8Array(ev.target.result), { type:'array' });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+
+      if (!rows || rows.length < 2) {
+        setStatus('ファイルにデータがありません', 'error'); return;
+      }
+
+      // ヘッダー行を探す（先頭5行以内）
+      let hdrIdx = 0;
+      for (let i = 0; i < Math.min(5, rows.length); i++) {
+        const r = rows[i].map(h => String(h).toLowerCase());
+        if (r.some(h => h.includes('first') || h.includes('last') || h.includes('name') || h.includes('氏名') || h.includes('名前'))) {
+          hdrIdx = i; break;
+        }
+      }
+      const hdr = rows[hdrIdx].map(h => String(h).trim());
+
+      // 列インデックス検出（複数パターン対応）
+      const findCol = (...kws) => hdr.findIndex(h => kws.some(k => h.toLowerCase().includes(k.toLowerCase())));
+      const colFirst = findCol('First Name', 'firstname', '名', 'given');
+      const colLast  = findCol('Last Name',  'lastname',  '姓', 'family');
+      const colFico  = findCol('FICO', 'safe driving', 'score', 'スコア');
+
+      const c0 = colFirst >= 0 ? colFirst : 0;
+      const c1 = colLast  >= 0 ? colLast  : 1;
+      const cf = colFico  >= 0 ? colFico  : -1;
+
+      driverData  = [];
+      mentorNames = new Set();
+
+      for (let i = hdrIdx + 1; i < rows.length; i++) {
+        const row   = rows[i];
+        const first = String(row[c0] || '').trim();
+        const last  = String(row[c1] || '').trim();
+        const ficoRaw = cf >= 0 ? row[cf] : null;
+        const fico  = ficoRaw !== null ? Number(ficoRaw) : null;
+        if (!first && !last) continue;
+        driverData.push({ first, last, fico: (fico !== null && !isNaN(fico)) ? fico : null });
+        if (first) mentorNames.add(first);
+        if (last)  mentorNames.add(last);
+      }
+
+      document.getElementById('file-driver-count').textContent = driverData.length;
+      document.getElementById('file-info-bar').classList.add('visible');
+      setStatus(`✓ 読込完了 — ${driverData.length}名（FICOスコア含む）`, 'ok');
+      setStep(2); checkReady();
+    } catch(e) { setStatus('エラー: ' + e.message, 'error'); }
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+document.getElementById('attendance-input').addEventListener('input', checkReady);
+
+function checkReady() {
+  const ok = document.getElementById('attendance-input').value.trim().length > 0;
+  document.getElementById('run-btn').disabled = !ok;
+}
+
+// ── 正規化・照合 ──────────────────────────────────────
+// 旧字体・異体字 → 新字体の変換テーブル
+const KANJI_MAP = {
+  '德':'徳','髙':'高','﨑':'崎','嵜':'崎','濵':'浜','濱':'浜',
+  '冨':'富','齋':'斎','齊':'斉','瀧':'滝','桒':'桑','栁':'柳',
+  '眞':'真','實':'実','國':'国','澤':'沢','黑':'黒','邉':'辺','邊':'辺',
+};
+function normalizeKanji(s) {
+  return s.split('').map(c => KANJI_MAP[c] || c).join('');
+}
+function normalize(s) {
+  const base = String(s||'')
+    .replace(/さん|くん|君|様/g,'')
+    .replace(/（[^）]*）|\([^)]*\)/g,'')
+    .replace(/[\s　]/g,'')
+    .trim();
+  return normalizeKanji(base);
+}
+function isInFile(name) {
+  const key = normalize(name);
+  if (!key) return false;
+  for (const v of mentorNames) {
+    const nv = normalize(v);
+    if (!nv) continue;
+    if (nv === key || nv.includes(key) || key.includes(nv)) return true;
+  }
+  return false;
+}
+function findDriver(name) {
+  const key = normalize(name);
+  for (const d of driverData) {
+    const f = normalize(d.first), l = normalize(d.last);
+    if (f===key||l===key||(f+l).includes(key)||key.includes(f)||key.includes(l)) return d;
+  }
+  return null;
+}
+
+// ── スコア判定 ────────────────────────────────────────
+function sCls(v)   { return v===null?'mid':v>=750?'high':v>=600?'mid':'low'; }
+function sLabel(v) { return v===null?'—':v>=750?'✅ 安全':v>=600?'⚠️ 中リスク':'🔴 高リスク'; }
+function sColor(v) { return v>=750?'#5dd6a8':v>=600?'#f0c040':'#e05c5c'; }
+
+// ── 実行 ─────────────────────────────────────────────
+document.getElementById('run-btn').addEventListener('click', () => {
+  const lines = document.getElementById('attendance-input').value
+    .split(/\n/).map(l=>l.trim()).filter(Boolean);
+  if (!lines.length) { setStatus('出勤者を入力してください','error'); return; }
+
+  if (mentorNames.size === 0) { setStatus('ファイルを読み込んでください','error'); return; }
+
+  const notStarted=[], started=[];
+  lines.forEach(l => isInFile(l) ? started.push(l) : notStarted.push(l));
+
+  renderResult(notStarted, started, lines.length);
+  setStatus(`照合完了 — 出勤${lines.length}名 / 未起動${notStarted.length}名 / 起動済${started.length}名`,
+    notStarted.length ? 'error' : 'ok');
+  setStep(3);
+});
+
+// ── 描画 ─────────────────────────────────────────────
+function renderResult(notStarted, started, total) {
+  const area = document.getElementById('result-area');
+  area.innerHTML = '';
+
+  // 未起動
+  const s1 = document.createElement('div');
+  s1.className = 'result-section';
+  if (notStarted.length) {
+    s1.innerHTML = `<div class="sec-title warn">⚠ Mentor 未起動 <span class="badge">${notStarted.length}名</span></div>`;
+    notStarted.forEach(n => {
+      const c = document.createElement('div'); c.className='driver-card';
+      c.innerHTML=`<div style="font-size:18px">🔴</div><div class="driver-name">${n}</div><div class="driver-note">未起動</div>`;
+      s1.appendChild(c);
+    });
+  } else {
+    s1.innerHTML = `<div class="sec-title ok">✓ 全員 Mentor 起動済み</div>
+      <div style="background:var(--surface);border:1px solid rgba(93,214,168,0.25);border-radius:8px;padding:14px 16px;font-size:13px;color:var(--ok);">出勤者 ${total}名 全員の起動が確認されました 🎉</div>`;
+  }
+  area.appendChild(s1);
+
+  // スコアテーブル
+  const scored = started.map(n => {
+    const d = findDriver(n);
+    return { name: n, fico: d ? d.fico : null };
+  }).sort((a,b) => (b.fico||0)-(a.fico||0));
+
+  const s2 = document.createElement('div');
+  s2.className = 'result-section';
+  s2.innerHTML = `<div class="sec-title info">📊 FICO 安全運転スコア（起動済み ${started.length}名）</div>`;
+  const wrap = document.createElement('div');
+  wrap.style.cssText='background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:10px;';
+  const tbl = document.createElement('table');
+  tbl.className = 'score-table';
+  tbl.innerHTML = `<thead><tr><th>ドライバー</th><th>FICOスコア</th><th>判定</th></tr></thead>`;
+  const tb = document.createElement('tbody');
+  scored.forEach(({name,fico}) => {
+    const pct = fico ? Math.min(100,Math.round((fico-100)/750*100)) : 0;
+    const tr = document.createElement('tr');
+    tr.innerHTML=`<td>${name}</td>
+      <td><span class="sv ${sCls(fico)}">${fico!==null?fico:'—'}</span>
+          <span class="sbar"><span class="sbar-fill" style="width:${pct}%;background:${sColor(fico||0)}"></span></span></td>
+      <td style="font-size:11px;color:var(--text-sub)">${sLabel(fico)}</td>`;
+    tb.appendChild(tr);
+  });
+  tbl.appendChild(tb); wrap.appendChild(tbl); s2.appendChild(wrap);
+  area.appendChild(s2);
+
+  // LINE メッセージ
+  const s3 = document.createElement('div');
+  s3.className = 'result-section';
+  s3.innerHTML = `<div class="sec-title lime">📱 LINE 送信メッセージ（自動生成・編集可）</div>`;
+
+  const preview = document.createElement('div');
+  preview.className = 'line-preview block-area';
+  preview.innerHTML = `<div class="block-header">📋 メッセージプレビュー（そのままコピーしてLINEへ）</div>`;
+  const ta = document.createElement('textarea');
+  ta.id = 'line-ta';
+  ta.value = buildMsg(notStarted, scored);
+  preview.appendChild(ta);
+  s3.appendChild(preview);
+
+  const btnRow = document.createElement('div');
+  btnRow.className = 'btn-row';
+
+  const cpBtn = document.createElement('button');
+  cpBtn.className = 'sub-btn green';
+  cpBtn.textContent = 'コピー';
+  cpBtn.onclick = () => {
+    navigator.clipboard.writeText(document.getElementById('line-ta').value).then(() => {
+      cpBtn.textContent = '✓ コピー完了';
+      setStep(4);
+      setTimeout(() => cpBtn.textContent = 'コピー', 2500);
+    });
+  };
+
+  btnRow.appendChild(cpBtn);
+  s3.appendChild(btnRow);
+  area.appendChild(s3);
+}
+
+// ── LINEメッセージ生成 ────────────────────────────────
+function buildMsg(notStarted, scored) {
+  const d = new Date(); d.setDate(d.getDate() - 1);
+  const ds = `${d.getMonth()+1}/${d.getDate()}`;
+
+  const notBlock = notStarted.length
+    ? notStarted.map(n=>`•${n}`).join('\n')
+    : '（なし）全員起動済みです 🎉';
+
+  const scoreBlock = scored.map(({name,fico}) => {
+    const mark = fico===null?'':fico>=750?'✅':fico>=600?'⚠️':'🔴';
+    return `${mark} ${name}　${fico!==null?fico+'点':'—'}`;
+  }).join('\n');
+
+  return `前日mentor稼働者実績のご報告です。
+
+【${ds} mentor未起動者】
+${notBlock}
+
+併せて、mentor前日の起動実績と
+安全運転スコアを以下に共有いたします。
+
+━━━━━━━━━━━━━━━
+【FICO安全運転スコア基準値について】
+
+安全意識のさらなる向上と
+事故の低減を実現するために
+今後は「750点以上」が
+良好とされる基準となります。
+
+ドライバーの皆様には
+常に安全運転を心がけ、「750点以上」を
+目指していただきますようお願いいたします。
+
+特に配送中はもちろんのこと、
+センター帰庫時の運転には、これまで以上に
+余裕を持った行動をお願いいたします。
+
+━━━━━━━━━━━━━━━
+【スコア評価基準】
+
+① 安全＝低リスク（750〜850）
+② 中リスク（600〜749）
+③ 危険＝高リスク（100〜599）
+
+━━━━━━━━━━━━━━━
+【前日起動実績・FICOスコア一覧】
+
+${scoreBlock}
+
+━━━━━━━━━━━━━━━
+【mentor未起動の方へ】
+
+前日未起動の方は
+至急mentorを起動ください。
+
+本日稼働の方：
+「今から起動」をお願いいたします。
+
+明日以降稼働予定の方：
+「次回稼働時に起動」をお願いいたします。
+
+※2回連続で未起動の場合には
+「原因および改善策のご提示」をお願いする
+場合がございます。予めご了承ください。
+
+━━━━━━━━━━━━━━━
+ドライバー様と地域住民の安全が
+あってこその配送ビジネスです。
+
+より高いパフォーマンスを追求するうえで
+その基盤となる「安全基準の引き上げ」を
+最優先としています。
+
+今後も安全性をしっかりと担保し
+その精度をより一層高めるための取り組みに
+ご理解とご協力をお願いいたします。`;
+}
+
+// ── ステップ ──────────────────────────────────────────
+function setStep(n) {
+  ['step1','step2','step3','step4'].forEach((id,i) => {
+    const el=document.getElementById(id);
+    if (!el) return;
+    el.className='step'+(i+1<n?' done':i+1===n?' active':'');
+  });
+}
+function setStatus(msg,cls) {
+  const el=document.getElementById('status'); el.textContent=msg; el.className=cls||'';
+}
+</script>
+</body>
+</html>
