@@ -265,7 +265,7 @@ function isInFile(name) {
   for (const v of mentorNames) {
     const nv = normalize(v);
     if (!nv) continue;
-    if (nv === key || nv.includes(key) || key.includes(nv)) return true;
+    if (nv === key) return true;
   }
   return false;
 }
@@ -273,7 +273,7 @@ function findDriver(name) {
   const key = normalize(name);
   for (const d of driverData) {
     const f = normalize(d.first), l = normalize(d.last);
-    if (f===key||l===key||(f+l).includes(key)||key.includes(f)||key.includes(l)) return d;
+    if (f===key||l===key||f+l===key||key===f+l) return d;
   }
   return null;
 }
